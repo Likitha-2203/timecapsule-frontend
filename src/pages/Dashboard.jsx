@@ -1,26 +1,21 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import {
-  getUser,
-  getAllCapsules,
-  isMine,
-  isSentByMe,
-  getStatus,
-  timeLeft,
-} from "../utils/store";
+import { api, getUser, clearSession } from "../api";
+import { liveStatus, timeLeft } from "../utils/format";
 import "./Dashboard.css";
 
 function Dashboard() {
   const navigate = useNavigate();
   const user = getUser();
-  const [capsules, setCapsules] = useState(getAllCapsules);
+  const [data, setData] = useState({ received: [], sent: [] });
   const [, setTick] = useState(0);
 
   useEffect(() => {
     const refresh = () => {
-      setCapsules(getAllCapsules());
+      api.listCapsules().then(setData).catch(() => {});
       setTick((t) => t + 1);
     };
+    refresh();
     const id = setInterval(refresh, 20000);
     window.addEventListener("focus", refresh);
     return () => {
@@ -29,21 +24,19 @@ function Dashboard() {
     };
   }, []);
 
-  const mine = capsules.filter((c) => isMine(c, user));
-  const sentCount = capsules.filter((c) => isSentByMe(c, user)).length;
-
+  const mine = data.received;
   const total = mine.length;
-  const locked = mine.filter((c) => getStatus(c) === "locked").length;
-  const ready = mine.filter((c) => getStatus(c) === "ready").length;
-  const opened = mine.filter((c) => getStatus(c) === "opened").length;
+  const locked = mine.filter((c) => liveStatus(c) === "locked").length;
+  const ready = mine.filter((c) => liveStatus(c) === "ready").length;
+  const opened = mine.filter((c) => liveStatus(c) === "opened").length;
+  const sentCount = data.sent.length;
 
   const next = mine
-    .filter((c) => getStatus(c) === "locked")
-    .sort((a, b) => new Date(a.unlockDate) - new Date(b.unlockDate))[0];
+    .filter((c) => liveStatus(c) === "locked")
+    .sort((a, b) => new Date(a.unlockAt) - new Date(b.unlockAt))[0];
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    clearSession();
     navigate("/login");
   };
 
@@ -64,44 +57,31 @@ function Dashboard() {
         )}
 
         <div className="dash-stats">
-          <div className="stat-box">
-            <h3>{total}</h3>
-            <p>Received 📥</p>
-          </div>
-          <div className="stat-box">
-            <h3>{locked}</h3>
-            <p>Locked 🔒</p>
-          </div>
-          <div className="stat-box">
-            <h3>{opened}</h3>
-            <p>Opened 💌</p>
-          </div>
+          <div className="stat-box"><h3>{total}</h3><p>Received 📥</p></div>
+          <div className="stat-box"><h3>{locked}</h3><p>Locked 🔒</p></div>
+          <div className="stat-box"><h3>{opened}</h3><p>Opened 💌</p></div>
         </div>
 
-        <p className="sent-line">📤 You have sent <strong>{sentCount}</strong> capsule{sentCount !== 1 ? "s" : ""} to others</p>
+        <p className="sent-line">
+          📤 You have sent <strong>{sentCount}</strong> capsule{sentCount !== 1 ? "s" : ""} to others
+        </p>
 
         {next && (
           <div className="next-box">
             <span className="next-emoji">{next.mood}</span>
             <div>
               <strong>{next.title}</strong>
-              <p>Opens in {timeLeft(next.unlockDate)}</p>
+              <p>Opens in {timeLeft(next.unlockAt)}</p>
             </div>
           </div>
         )}
 
         <div className="dash-actions">
-          <Link to="/create" className="dash-btn purple">
-            ＋ Create Capsule
-          </Link>
-          <Link to="/my-capsules" className="dash-btn pink">
-            📦 My Capsules
-          </Link>
+          <Link to="/create" className="dash-btn purple">＋ Create Capsule</Link>
+          <Link to="/my-capsules" className="dash-btn pink">📦 My Capsules</Link>
         </div>
 
-        <button className="logout-btn" onClick={handleLogout}>
-          Logout
-        </button>
+        <button className="logout-btn" onClick={handleLogout}>Logout</button>
       </div>
     </div>
   );

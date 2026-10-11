@@ -1,20 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import {
-  getUser,
-  getAllCapsules,
-  saveAllCapsules,
-  isMine,
-  isSentByMe,
-  getStatus,
-  timeLeft,
-  formatDateTime,
-} from "../utils/store";
+import { api, getUser } from "../api";
+import { liveStatus, timeLeft, formatDateTime } from "../utils/format";
 import "./Capsules.css";
 
 function MyCapsules() {
   const user = getUser();
-  const [capsules, setCapsules] = useState(getAllCapsules);
+  const [data, setData] = useState({ received: [], sent: [] });
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [tab, setTab] = useState("received");
   const [filter, setFilter] = useState("all");
   const [selected, setSelected] = useState(null);
@@ -22,33 +16,36 @@ function MyCapsules() {
   const [toast, setToast] = useState("");
   const [, setTick] = useState(0);
 
-  // Re-render every 20 seconds so statuses update automatically
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 20000);
-    return () => clearInterval(id);
+  const load = useCallback(async () => {
+    try {
+      setData(await api.listCapsules());
+      setLoadError("");
+    } catch (err) {
+      setLoadError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const save = (list) => {
-    setCapsules(list);
-    saveAllCapsules(list);
-  };
+  useEffect(() => {
+    load();
+    // Re-render every 20 seconds so locked capsules become "ready" automatically
+    const id = setInterval(() => setTick((t) => t + 1), 20000);
+    return () => clearInterval(id);
+  }, [load]);
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(""), 2400);
   };
 
-  const received = capsules.filter((c) => isMine(c, user));
-  const sent = capsules.filter((c) => isSentByMe(c, user));
+  const handleClick = async (c) => {
+    const status = liveStatus(c);
 
-  const handleClick = (c) => {
-    const status = getStatus(c);
-
-    // Sent capsules: the sender cannot read the message, only see its status
     if (tab === "sent") {
       showToast(
         status === "locked"
-          ? `🎁 Will be delivered to ${c.recipientName} in ${timeLeft(c.unlockDate)}`
+          ? `🎁 Will be delivered to ${c.recipientName} in ${timeLeft(c.unlockAt)}`
           : status === "opened"
           ? `💌 ${c.recipientName} has opened this capsule`
           : `✅ Delivered to ${c.recipientName}`
@@ -59,26 +56,39 @@ function MyCapsules() {
     if (status === "locked") {
       setShakeId(c.id);
       setTimeout(() => setShakeId(null), 400);
-      showToast(`🔒 Locked. ${timeLeft(c.unlockDate)} remaining`);
+      showToast(`🔒 Locked. ${timeLeft(c.unlockAt)} remaining`);
       return;
     }
 
-    if (status === "ready") {
-      save(capsules.map((x) => (x.id === c.id ? { ...x, opened: true } : x)));
+    try {
+      const full = await api.openCapsule(c.id); // server reveals the message only after unlock
+      setSelected({ ...full, unlockAt: c.unlockAt });
+      load();
+    } catch (err) {
+      showToast(err.message);
     }
-    setSelected(c);
   };
 
-  const handleDelete = (e, id) => {
+  const handleDelete = async (e, c) => {
     e.stopPropagation();
-    if (window.confirm("Are you sure you want to delete this capsule?")) {
-      save(capsules.filter((c) => c.id !== id));
+    const msg =
+      tab === "sent"
+        ? "Cancel this capsule? The recipient will not receive it."
+        : "Are you sure you want to delete this capsule?";
+    if (!window.confirm(msg)) return;
+    try {
+      await api.deleteCapsule(c.id);
+      load();
+    } catch (err) {
+      showToast(err.message);
     }
   };
 
+  const received = data.received;
+  const sent = data.sent;
   const list =
     tab === "received"
-      ? received.filter((c) => filter === "all" || getStatus(c) === filter)
+      ? received.filter((c) => filter === "all" || liveStatus(c) === filter)
       : sent;
 
   return (
@@ -96,16 +106,10 @@ function MyCapsules() {
       </div>
 
       <div className="tab-row">
-        <button
-          className={tab === "received" ? "active" : ""}
-          onClick={() => setTab("received")}
-        >
+        <button className={tab === "received" ? "active" : ""} onClick={() => setTab("received")}>
           📥 Received ({received.length})
         </button>
-        <button
-          className={tab === "sent" ? "active" : ""}
-          onClick={() => setTab("sent")}
-        >
+        <button className={tab === "sent" ? "active" : ""} onClick={() => setTab("sent")}>
           📤 Sent ({sent.length})
         </button>
       </div>
@@ -124,45 +128,43 @@ function MyCapsules() {
         </div>
       )}
 
-      {list.length === 0 ? (
+      {loading ? (
+        <div className="empty-box"><p>Loading your capsules...</p></div>
+      ) : loadError ? (
+        <div className="empty-box"><p>{loadError}</p></div>
+      ) : list.length === 0 ? (
         <div className="empty-box">
           <div className="big">📭</div>
-          <p>
-            {tab === "received"
-              ? "No capsules here yet"
-              : "You have not sent any capsules yet"}
-          </p>
+          <p>{tab === "received" ? "No capsules here yet" : "You have not sent any capsules yet"}</p>
           <Link to="/create">＋ Create a capsule</Link>
         </div>
       ) : (
         <div className="cap-grid">
           {list.map((c) => {
-            const status = getStatus(c);
-            const fromOther = c.senderEmail && c.senderEmail !== user?.email;
+            const status = liveStatus(c);
+            const canDelete = tab === "received" || status === "locked";
             return (
               <div
                 key={c.id}
                 className={`cap-card ${status} ${shakeId === c.id ? "shake" : ""}`}
                 onClick={() => handleClick(c)}
               >
-                <button className="del-btn" onClick={(e) => handleDelete(e, c.id)}>🗑</button>
+                {canDelete && (
+                  <button className="del-btn" onClick={(e) => handleDelete(e, c)}>🗑</button>
+                )}
                 <div className="cap-emoji">{c.mood}</div>
                 <h3>{c.title}</h3>
 
-                {tab === "received" && fromOther && (
-                  <div className="who-tag">🎁 From: {c.senderName}</div>
-                )}
-                {tab === "sent" && (
-                  <div className="who-tag">📤 To: {c.recipientName}</div>
-                )}
+                {tab === "received" && !c.fromSelf && <div className="who-tag">🎁 From: {c.senderName}</div>}
+                {tab === "sent" && <div className="who-tag">📤 To: {c.recipientName}</div>}
 
-                <div className="cap-date">Opens {formatDateTime(c.unlockDate)}</div>
+                <div className="cap-date">Opens {formatDateTime(c.unlockAt)}</div>
 
                 <span className={`badge ${status}`}>
-                  {tab === "received" && status === "locked" && `🔒 ${timeLeft(c.unlockDate)} left`}
+                  {tab === "received" && status === "locked" && `🔒 ${timeLeft(c.unlockAt)} left`}
                   {tab === "received" && status === "ready" && "✨ Ready to open!"}
                   {tab === "received" && status === "opened" && "💌 Opened"}
-                  {tab === "sent" && status === "locked" && `🚚 Delivers in ${timeLeft(c.unlockDate)}`}
+                  {tab === "sent" && status === "locked" && `🚚 Delivers in ${timeLeft(c.unlockAt)}`}
                   {tab === "sent" && status === "ready" && "✅ Delivered"}
                   {tab === "sent" && status === "opened" && "💌 Opened by recipient"}
                 </span>
@@ -174,16 +176,19 @@ function MyCapsules() {
 
       {selected && (
         <div className="modal-bg" onClick={() => setSelected(null)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="m-emoji">{selected.mood}</div>
-            <h2>{selected.title}</h2>
-            <div className="cap-date">
-              {selected.senderEmail && selected.senderEmail !== user?.email
-                ? `A message from ${selected.senderName}`
-                : "A message from your past self"}
+          <div className="letter" onClick={(e) => e.stopPropagation()}>
+            <button className="letter-x" onClick={() => setSelected(null)} aria-label="Close">×</button>
+            <div className="letter-head">
+              <div className="letter-mood">{selected.mood}</div>
+              <h2>{selected.title}</h2>
+              <div className="letter-date">{formatDateTime(selected.unlockAt)}</div>
             </div>
-            <div className="modal-msg">{selected.message}</div>
-            <button className="close-btn" onClick={() => setSelected(null)}>Close</button>
+            <div className="letter-scroll">
+              <p className="letter-dear">Dear {user?.name || "friend"},</p>
+              <div className="letter-body">{selected.message}</div>
+            </div>
+            <div className="letter-seal">♥</div>
+            <button className="close-btn letter-close" onClick={() => setSelected(null)}>Close letter</button>
           </div>
         </div>
       )}

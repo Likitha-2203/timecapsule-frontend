@@ -1,29 +1,37 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getUsers, norm } from "../utils/store";
+import { api } from "../api";
+import { validatePassword } from "../utils/format";
 import "./Auth.css";
 
 function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    // TODO: Replace with a backend API call
-    const users = getUsers();
-    const mail = norm(email);
+  const pw = validatePassword(password);
 
-    if (users.some((u) => u.email === mail)) {
-      alert("An account with this email already exists. Please log in.");
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!pw.valid) {
+      setError("Password must be at least 6 characters and include a special symbol.");
       return;
     }
 
-    users.push({ name: name.trim(), email: mail, password });
-    localStorage.setItem("users", JSON.stringify(users));
-    alert("Account created successfully. Please log in.");
-    navigate("/login");
+    setLoading(true);
+    try {
+      const res = await api.register({ name, email, password });
+      navigate("/verify-email", { state: { email: res.email } });
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -39,6 +47,7 @@ function Register() {
           <input
             type="text"
             placeholder="Full name"
+            autoComplete="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -46,6 +55,7 @@ function Register() {
           <input
             type="email"
             placeholder="Email address"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -53,12 +63,23 @@ function Register() {
           <input
             type="password"
             placeholder="Password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <button type="submit" className="auth-btn pink">
-            Register
+
+          <ul className="pw-hints">
+            <li className={pw.length ? "ok" : ""}>{pw.length ? "✓" : "○"} At least 6 characters</li>
+            <li className={pw.special ? "ok" : ""}>
+              {pw.special ? "✓" : "○"} At least one special symbol (e.g. @ # $ ! %)
+            </li>
+          </ul>
+
+          {error && <div className="auth-error">{error}</div>}
+
+          <button type="submit" className="auth-btn pink" disabled={loading}>
+            {loading ? "Creating account..." : "Register"}
           </button>
         </form>
 

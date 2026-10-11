@@ -1,31 +1,34 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getUsers, norm } from "../utils/store";
+import { api, saveSession } from "../api";
 import "./Auth.css";
 
 function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: Replace with a backend API call
-    const user = getUsers().find(
-      (u) => u.email === norm(email) && u.password === password
-    );
-
-    if (!user) {
-      alert("Incorrect email or password. If you are new, please register first.");
-      return;
+    setError("");
+    setLoading(true);
+    try {
+      const res = await api.login({ email, password });
+      saveSession(res); // token + user (name, email) come from the database
+      alert("Login successful");
+      navigate("/dashboard");
+    } catch (err) {
+      // Account exists but the email was never verified: continue to verification
+      if (err.data?.needsVerification) {
+        navigate("/verify-email", { state: { email: err.data.email } });
+        return;
+      }
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    localStorage.setItem("token", "logged-in");
-    localStorage.setItem(
-      "user",
-      JSON.stringify({ name: user.name, email: user.email })
-    );
-    navigate("/dashboard");
   };
 
   return (
@@ -40,20 +43,33 @@ function Login() {
         <form onSubmit={handleSubmit}>
           <input
             type="email"
+            name="email"
             placeholder="Email address"
+            autoComplete="username"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
           />
           <input
             type="password"
+            name="password"
             placeholder="Password"
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <button type="submit" className="auth-btn purple">
-            Login
+
+          <div className="forgot-row">
+            <Link to="/forgot-password" className="forgot-link">
+              Forgot password?
+            </Link>
+          </div>
+
+          {error && <div className="auth-error">{error}</div>}
+
+          <button type="submit" className="auth-btn purple" disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 

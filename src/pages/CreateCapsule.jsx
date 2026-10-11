@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { getUser, getAllCapsules, saveAllCapsules, norm } from "../utils/store";
+import { api, getUser } from "../api";
 import "./Capsules.css";
 
 const MOODS = ["💌", "🎉", "❤️", "🎯", "🌟", "😢"];
@@ -28,55 +28,55 @@ function CreateCapsule() {
   const user = getUser();
 
   const [forSomeone, setForSomeone] = useState(false);
-  const [toName, setToName] = useState("");
   const [toEmail, setToEmail] = useState("");
+  const [recipient, setRecipient] = useState(null); // null = unchecked, {exists, name}
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [date, setDate] = useState("");
   const [mood, setMood] = useState("💌");
   const [sealing, setSealing] = useState(false);
+  const [error, setError] = useState("");
 
   const minDateTime = toLocalInput(new Date());
 
-  const handleSubmit = (e) => {
+  // Check (after the user stops typing) that the recipient has a verified account
+  useEffect(() => {
+    setRecipient(null);
+    const mail = toEmail.trim();
+    if (!forSomeone || !/^\S+@\S+\.\S+$/.test(mail)) return;
+    const id = setTimeout(() => {
+      api.lookupUser(mail).then(setRecipient).catch(() => setRecipient(null));
+    }, 500);
+    return () => clearTimeout(id);
+  }, [toEmail, forSomeone]);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
 
     if (new Date(date) <= new Date()) {
-      alert("The unlock date and time must be in the future.");
+      setError("The unlock date and time must be in the future.");
+      return;
+    }
+    if (forSomeone && toEmail.trim().toLowerCase() === user.email) {
+      setError("This is your own email address. Please select 'For Myself' instead.");
       return;
     }
 
-    let recipientEmail = user.email;
-    let recipientName = user.name;
-
-    if (forSomeone) {
-      recipientEmail = norm(toEmail);
-      recipientName = toName.trim() || recipientEmail;
-
-      if (recipientEmail === user.email) {
-        alert("This is your own email address. Please select 'For Myself' instead.");
-        return;
-      }
-    }
-
     setSealing(true);
-
-    // TODO: Replace with a backend API call
-    const capsule = {
-      id: Date.now(),
-      title,
-      message,
-      unlockDate: date,
-      mood,
-      opened: false,
-      senderName: user.name,
-      senderEmail: user.email,
-      recipientName,
-      recipientEmail,
-    };
-    saveAllCapsules([capsule, ...getAllCapsules()]);
-
-    setTimeout(() => navigate("/my-capsules"), 1800);
+    try {
+      await api.createCapsule({
+        title,
+        message,
+        mood,
+        unlockAt: new Date(date).toISOString(), // converts local time to UTC
+        recipientEmail: forSomeone ? toEmail : undefined,
+      });
+      setTimeout(() => navigate("/my-capsules"), 1500);
+    } catch (err) {
+      setSealing(false);
+      setError(err.message);
+    }
   };
 
   return (
@@ -97,18 +97,10 @@ function CreateCapsule() {
         <form className="form-card" onSubmit={handleSubmit}>
           <label>Who is this for?</label>
           <div className="type-toggle">
-            <button
-              type="button"
-              className={!forSomeone ? "active" : ""}
-              onClick={() => setForSomeone(false)}
-            >
+            <button type="button" className={!forSomeone ? "active" : ""} onClick={() => setForSomeone(false)}>
               🙋 For Myself
             </button>
-            <button
-              type="button"
-              className={forSomeone ? "active" : ""}
-              onClick={() => setForSomeone(true)}
-            >
+            <button type="button" className={forSomeone ? "active" : ""} onClick={() => setForSomeone(true)}>
               🎁 For Someone Else
             </button>
           </div>
@@ -116,21 +108,19 @@ function CreateCapsule() {
           {forSomeone && (
             <>
               <input
-                type="text"
-                placeholder="Recipient's name"
-                value={toName}
-                onChange={(e) => setToName(e.target.value)}
-                style={{ marginTop: 12 }}
-                required
-              />
-              <input
                 type="email"
-                placeholder="Recipient's email (must match their registered email)"
+                placeholder="Recipient's registered email address"
                 value={toEmail}
                 onChange={(e) => setToEmail(e.target.value)}
                 style={{ marginTop: 12 }}
                 required
               />
+              {recipient?.exists && <div className="recipient-ok">✓ Verified account: {recipient.name}</div>}
+              {recipient && !recipient.exists && (
+                <div className="recipient-bad">
+                  No verified account found for this email. They need to register and verify first.
+                </div>
+              )}
             </>
           )}
 
@@ -167,10 +157,10 @@ function CreateCapsule() {
             }
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            maxLength={1000}
+            maxLength={65536}
             required
           />
-          <div className="char-count">{message.length} / 1000</div>
+          <div className="char-count">{message.length.toLocaleString()} / 65,536</div>
 
           <label>Unlock Date &amp; Time</label>
           <div className="quick-row" style={{ marginBottom: 12 }}>
@@ -188,22 +178,19 @@ function CreateCapsule() {
             required
           />
 
+          {error && <div className="form-error">{error}</div>}
+
           <button className="seal-btn" type="submit" disabled={sealing}>
-            {sealing
-              ? "Sealing your capsule... 🔒"
-              : forSomeone
-              ? "🎁 Seal & Send"
-              : "🔒 Seal Capsule"}
+            {sealing ? "Sealing your capsule... 🔒" : forSomeone ? "🎁 Seal & Send" : "🔒 Seal Capsule"}
           </button>
         </form>
 
-        {/* LIVE PREVIEW */}
         <div className="preview-card">
           <h4>Live Preview</h4>
           <div className={`mini-capsule ${sealing ? "sealing" : ""}`}>{mood}</div>
           <div className="preview-title">{title || "Your capsule title"}</div>
           <div className="preview-to">
-            {forSomeone ? `To: ${toName || "..."}` : "To: Future me"}
+            {forSomeone ? `To: ${recipient?.name || toEmail || "recipient"}` : "To: Future me"}
           </div>
           <div className="preview-date">
             {date

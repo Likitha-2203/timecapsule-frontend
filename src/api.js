@@ -20,17 +20,22 @@ export function clearSession() {
 }
 
 async function request(path, { method = "GET", body, auth = true } = {}) {
+    const fullUrl = `${BASE}${path}`;
     let res;
     try {
-        res = await fetch(`${BASE}${path}`, {
+        console.log(`[TimeCapsule API] Calling: ${method} ${fullUrl}`);
+        res = await fetch(fullUrl, {
             method,
             headers: {
-                "Content-Type": "application/json",...(auth && getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+                "Content-Type": "application/json",
+                ...(auth && getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
             },
-            body: body ? JSON.stringify(body) : undefined,});
-        } catch {
-            throw new Error("Cannot reach the server. Please make sure the backend is running.");
-        }
+            body: body ? JSON.stringify(body) : undefined,
+        });
+    } catch (err) {
+        console.error(`[TimeCapsule API] Network error calling ${fullUrl}:`, err);
+        throw new Error(`Cannot reach backend at ${fullUrl}. (${err.message})`);
+    }
         const data = await res.json().catch(() => ({}));
 
   // Session expired: send the user back to login

@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_URL || "https://timecapsule-backend-a7a3.onrender.com";
+const rawBase = import.meta.env.VITE_API_URL || "https://timecapsule-backend-a7a3.onrender.com";
+const BASE = rawBase.replace(/\/+$/, "").replace(/\/api$/, "");
 export const getToken = () => localStorage.getItem("token");
 
 export function getUser() {
@@ -20,7 +21,8 @@ export function clearSession() {
 }
 
 async function request(path, { method = "GET", body, auth = true } = {}) {
-    const fullUrl = `${BASE}${path}`;
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    const fullUrl = `${BASE}${normalizedPath}`;
     let res;
     try {
         console.log(`[TimeCapsule API] Calling: ${method} ${fullUrl}`);
@@ -34,21 +36,45 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
         });
     } catch (err) {
         console.error(`[TimeCapsule API] Network error calling ${fullUrl}:`, err);
-        throw new Error(`Cannot reach backend at ${fullUrl}. (${err.message})`);
+        throw new Error(
+            `Cannot connect to backend at ${fullUrl}. If the server is on Render free tier, it may take 1-2 minutes to wake up from cold start. Please retry shortly.`
+        );
     }
-        const data = await res.json().catch(() => ({}));
 
-  // Session expired: send the user back to login
-        if (res.status === 401 && auth && getToken()) {
-            clearSession();
-            window.location.href = "/login";
+    let data;
+    try {
+        data = await res.json();
+    } catch {
+        data = {};
+    }
+
+    // Session expired: send the user back to login
+    if (res.status === 401 && auth && getToken()) {
+        clearSession();
+        window.location.href = "/login";
+    }
+
+    if (!res.ok) {
+        let msg = data.error || data.message;
+        if (!msg) {
+            if (res.status === 502 || res.status === 504) {
+                msg = "Backend service is currently starting up (cold start). Please wait 30 seconds and try again.";
+            } else if (res.status === 404) {
+                msg = "Requested endpoint not found. Please verify backend deployment.";
+            } else if (res.status === 403) {
+                msg = "Access forbidden.";
+            } else if (res.status === 400) {
+                msg = "Invalid request details.";
+            } else {
+                msg = `Server returned status ${res.status}. Please try again.`;
+            }
         }
-        if (!res.ok) {
-            const err = new Error(data.error || "Something went wrong. Please try again.");
-            err.data = data;
-            throw err;
-        }
-        return data;
+        const err = new Error(msg);
+        err.data = data;
+        err.status = res.status;
+        throw err;
+    }
+    return data;
 }
 
 export const api = {

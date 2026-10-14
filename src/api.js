@@ -52,16 +52,16 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
 }
 
 export const api = {
-    register: (b) => request("/auth/register", { method: "POST", body: b, auth: false }),
-    verify: (b) => request("/auth/verify", { method: "POST", body: b, auth: false }),
-    resend: (b) => request("/auth/resend", { method: "POST", body: b, auth: false }),
-    login: (b) => request("/auth/login", { method: "POST", body: b, auth: false }),
-    forgot: (b) => request("/auth/forgot", { method: "POST", body: b, auth: false }),
-    reset: (b) => request("/auth/reset", { method: "POST", body: b, auth: false }),
+    register: (b) => request("/api/auth/register", { method: "POST", body: b, auth: false }),
+    verify: (b) => request("/api/auth/verify", { method: "POST", body: b, auth: false }),
+    resend: (b) => request("/api/auth/resend", { method: "POST", body: b, auth: false }),
+    login: (b) => request("/api/auth/login", { method: "POST", body: b, auth: false }),
+    forgot: (b) => request("/api/auth/forgot", { method: "POST", body: b, auth: false }),
+    reset: (b) => request("/api/auth/reset", { method: "POST", body: b, auth: false }),
 
-    lookupUser: (email) => request(`/users/lookup?email=${encodeURIComponent(email)}`),
-    listCapsules: () => request("/capsules"),
-    createCapsule: (b) => request("/capsules", { method: "POST", body: b }),
-    openCapsule: (id) => request(`/capsules/${id}/open`, { method: "POST" }),
-    deleteCapsule: (id) => request(`/capsules/${id}`, { method: "DELETE" }),
+    lookupUser: (email) => request(`/api/users/lookup?email=${encodeURIComponent(email)}`),
+    listCapsules: () => request("/api/capsules"),
+    createCapsule: (b) => request("/api/capsules", { method: "POST", body: b }),
+    openCapsule: (id) => request(`/api/capsules/${id}/open`, { method: "POST" }),
+    deleteCapsule: (id) => request(`/api/capsules/${id}`, { method: "DELETE" }),
 };

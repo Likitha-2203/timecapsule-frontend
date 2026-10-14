@@ -1,5 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:9090/api";
-
+const BASE = import.meta.env.VITE_API_URL || "https://timecapsule-backend-d5pz.onrender.com/api";
 export const getToken = () => localStorage.getItem("token");
 
 export function getUser() {

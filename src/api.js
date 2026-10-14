@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || "https://timecapsule-backend-d5pz.onrender.com/api";
+const BASE = import.meta.env.VITE_API_URL || "https://timecapsule-backend-ss3v.onrender.com/api";
 export const getToken = () => localStorage.getItem("token");
 
 export function getUser() {
